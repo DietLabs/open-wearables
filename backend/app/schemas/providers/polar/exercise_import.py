@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class HeartRateJSON(BaseModel):
@@ -37,6 +37,15 @@ class TrainingLoadProJSON(BaseModel):
     perceived_load_interpretation: str | None = Field(None, alias="perceived-load-interpretation")
     user_rpe: str | None = Field(None, alias="user-rpe")
 
+    @field_validator("cardio_load", "muscle_load", "perceived_load", mode="before")
+    @classmethod
+    def _round_float_to_int(cls, value: object) -> object:
+        # Polar returns fractional load scores (e.g. cardio-load 6.26022),
+        # but we only store whole numbers — round instead of failing validation.
+        if isinstance(value, float):
+            return round(value)
+        return value
+
 
 class ExerciseJSON(BaseModel):
     id: str
@@ -71,3 +80,20 @@ class ExerciseJSON(BaseModel):
 
     samples: list[HRSamplesJSON] | None = None
     route: list[RoutePointJSON] | None = None
+
+    @field_validator(
+        "calories",
+        "distance",
+        "fat_percentage",
+        "carbohydrate_percentage",
+        "protein_percentage",
+        "running_index",
+        mode="before",
+    )
+    @classmethod
+    def _round_float_to_int(cls, value: object) -> object:
+        # Polar returns fractional values for these fields (e.g. fat_percentage 19.6816),
+        # but we only store whole numbers — round instead of failing validation.
+        if isinstance(value, float):
+            return round(value)
+        return value

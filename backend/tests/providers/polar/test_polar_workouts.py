@@ -167,6 +167,67 @@ class TestPolarWorkoutsDateExtraction:
             workouts._extract_dates("2024-01-15T08:00:00", "2024-01-15T09:00:00")
 
 
+class TestExerciseJSONFloatCoercion:
+    """ExerciseJSON must round Polar's fractional numbers for int-typed fields.
+
+    Polar sends fractional values (e.g. cardio-load 6.26022, fat_percentage
+    19.6816) for fields the schema types as int. Without coercion Pydantic
+    raises int_from_float and the whole EXERCISE webhook is dropped.
+    """
+
+    def test_top_level_fractional_fields_are_rounded(self, sample_polar_exercise: dict) -> None:
+        payload = {
+            **sample_polar_exercise,
+            "calories": 650.7,
+            "distance": 10000.4,
+            "fat_percentage": 19.6816,
+            "carbohydrate_percentage": 70.4,
+            "protein_percentage": 9.9,
+            "running-index": 52.3,
+        }
+
+        exercise = PolarExerciseJSON(**payload)
+
+        assert exercise.calories == 651
+        assert exercise.distance == 10000
+        assert exercise.fat_percentage == 20
+        assert exercise.carbohydrate_percentage == 70
+        assert exercise.protein_percentage == 10
+        assert exercise.running_index == 52
+
+    def test_nested_training_load_pro_fractional_fields_are_rounded(self, sample_polar_exercise: dict) -> None:
+        # Reproduces the production failure: training_load_pro.cardio-load = 6.26022
+        payload = {
+            **sample_polar_exercise,
+            "training_load_pro": {
+                "date": "2026-06-21",
+                "cardio-load": 6.26022,
+                "muscle-load": 3.69198,
+                "perceived-load": 12.8,
+                "cardio-load-interpretation": "MAINTAINING",
+            },
+        }
+
+        exercise = PolarExerciseJSON(**payload)
+
+        assert exercise.training_load_pro is not None
+        assert exercise.training_load_pro.cardio_load == 6
+        assert exercise.training_load_pro.muscle_load == 4
+        assert exercise.training_load_pro.perceived_load == 13
+
+    def test_integer_values_pass_through_unchanged(self, sample_polar_exercise: dict) -> None:
+        payload = {
+            **sample_polar_exercise,
+            "training_load_pro": {"cardio-load": 6, "muscle-load": 4, "perceived-load": 13},
+        }
+
+        exercise = PolarExerciseJSON(**payload)
+
+        assert exercise.calories == 650
+        assert exercise.training_load_pro is not None
+        assert exercise.training_load_pro.cardio_load == 6
+
+
 class TestPolarWorkoutsMetricsBuilding:
     """Tests for building metrics from Polar exercise data."""
 
